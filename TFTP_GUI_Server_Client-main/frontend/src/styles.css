@@ -1,0 +1,8 @@
+body{ font-family: Inter, Arial, sans-serif; background:#f6f7fb; color:#222; }
+header{ display:flex; align-items:center; justify-content:space-between; padding:12px 24px; background:#fff; border-bottom:1px solid #eee }
+.app{ max-width:1100px; margin:24px auto; }
+.card{ background:#fff; padding:16px; border-radius:8px; box-shadow:0 6px 18px rgba(20,20,40,0.06); margin:12px }
+.grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px }
+input, select{ width:100%; padding:8px; margin:6px 0; box-sizing:border-box }
+button{ background:#2f6fdb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer }
+button:disabled{ opacity:0.6 }
