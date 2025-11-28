@@ -222,14 +222,18 @@ class TftpContextServer(TftpContext):
                              timeout,
                              retries
                              )
+        
         # At this point we have no idea if this is a download or an upload. We
         # need to let the start state determine that.
+
         self.state = TftpStateServerStart(self)
 
         self.root = root
         self.dyn_file_func = dyn_file_func
         self.upload_open = upload_open
-
+        self.context = None    # 'WRQ' or 'RRQ'
+        self.filename = None
+        self.file_bytes = b""  # Full file buffer collected over UDP packets
     def __str__(self):
         return "%s:%s %s" % (self.host, self.port, self.state)
 
@@ -252,6 +256,7 @@ class TftpContextServer(TftpContext):
         self.state = self.state.handle(pkt,
                                        self.host,
                                        self.port)
+        
 
     def end(self):
         """Finish up the context."""

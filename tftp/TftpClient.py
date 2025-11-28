@@ -48,9 +48,9 @@ class TftpClient(TftpSession):
 
         Note: If output is a hyphen, stdout is used."""
         # We're downloading.
-        log.debug("Creating download context with the following params:")
-        log.debug("host = %s, port = %s, filename = %s" % (self.host, self.iport, filename))
-        log.debug("options = %s, packethook = %s, timeout = %s" % (self.options, packethook, timeout))
+        log.info("Creating download context with the following params:")
+        log.info("host = %s, port = %s, filename = %s" % (self.host, self.iport, filename))
+        log.info("options = %s, packethook = %s, timeout = %s" % (self.options, packethook, timeout))
         self.context = TftpContextClientDownload(self.host,
                                                  self.iport,
                                                  filename,

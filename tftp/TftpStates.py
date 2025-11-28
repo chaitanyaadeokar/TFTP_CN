@@ -13,6 +13,7 @@ error, in which case a TftpException is returned instead."""
 
 from .TftpShared import *
 from .TftpPacketTypes import *
+import io
 import os
 import logging
 
@@ -126,18 +127,20 @@ class TftpState(object):
         self.context.last_pkt = ackpkt
 
     def sendError(self, errorcode):
-        """This method uses the socket passed, and uses the errorcode to
-        compose and send an error packet."""
         log.debug("In sendError, being asked to send error %d", errorcode)
         errpkt = TftpPacketERR()
         errpkt.errorcode = errorcode
-        if self.context.tidport == None:
+
+        if self.context.tidport is None:
             log.debug("Error packet received outside session. Discarding")
         else:
-            self.context.sock.sendto(errpkt.encode().buffer,
-                                     (self.context.host,
-                                      self.context.tidport))
+            self.context.sock.sendto(
+                errpkt.encode().buffer,
+                (self.context.host, self.context.tidport)
+            )
+
         self.context.last_pkt = errpkt
+
 
     def sendOACK(self):
         """This method sends an OACK packet with the options from the current
@@ -295,56 +298,36 @@ class TftpStateServerRecvRRQ(TftpServerState):
     """This class represents the state of the TFTP server when it has just
     received an RRQ packet."""
     def handle(self, pkt, raddress, rport):
-        "Handle an initial RRQ packet as a server."
         log.debug("In TftpStateServerRecvRRQ.handle")
+        self.context.context = 'RRQ'
+        self.context.filename = pkt.filename
+
         sendoack = self.serverInitial(pkt, raddress, rport)
-        path = self.full_path
-        log.info("Opening file %s for reading" % path)
-        if os.path.exists(path):
-            # Note: Open in binary mode for win32 portability, since win32
-            # blows.
-            self.context.fileobj = open(path, "rb")
-        elif self.context.dyn_file_func:
-            log.debug("No such file %s but using dyn_file_func", path)
-            self.context.fileobj = \
-                self.context.dyn_file_func(self.context.file_to_transfer, raddress=raddress, rport=rport)
 
-            if self.context.fileobj is None:
-                log.debug("dyn_file_func returned 'None', treating as "
-                          "FileNotFound")
-                self.sendError(TftpErrors.FileNotFound)
-                raise TftpException("File not found: %s" % path)
-        else:
-            log.warning("File not found: %s", path)
+        # Instead of loading from disk → ✅ load from database
+        log.info("🔍 Fetching file from database: %s" % self.context.filename)
+        db = getattr(self.context, "db", None)
+        data = db.get_file(self.context.filename) if db else None
+
+        if data is None:
             self.sendError(TftpErrors.FileNotFound)
-            raise TftpException("File not found: {}".format(path))
+            raise TftpException("File not found in database.")
 
-        # Options negotiation.
-        if sendoack and 'tsize' in self.context.options:
-            # getting the file size for the tsize option. As we handle
-            # file-like objects and not only real files, we use this seeking
-            # method instead of asking the OS
-            self.context.fileobj.seek(0, os.SEEK_END)
-            tsize = str(self.context.fileobj.tell())
-            self.context.fileobj.seek(0, 0)
-            self.context.options['tsize'] = tsize
+        self.context.file_bytes = data  # load full file into memory buffer
+        self.context.fileobj = io.BytesIO(self.context.file_bytes)
+        self.context.next_block = 1
+
+        if 'tsize' in self.context.options:
+            self.context.options['tsize'] = str(len(self.context.file_bytes))
 
         if sendoack:
-            # Note, next_block is 0 here since that's the proper
-            # acknowledgement to an OACK.
-            # FIXME: perhaps we do need a TftpStateExpectOACK class...
             self.sendOACK()
-            # Note, self.context.next_block is already 0.
-        else:
-            self.context.next_block = 1
-            log.debug("No requested options, starting send...")
-            self.context.pending_complete = self.sendDAT()
-        # Note, we expect an ack regardless of whether we sent a DAT or an
-        # OACK.
+
+        # send first block via standard fileobj pipeline
+        self.context.pending_complete = self.sendDAT()
         return TftpStateExpectACK(self.context)
 
-        # Note, we don't have to check any other states in this method, that's
-        # up to the caller.
+
 
 class TftpStateServerRecvWRQ(TftpServerState):
     """This class represents the state of the TFTP server when it has just
@@ -369,42 +352,25 @@ class TftpStateServerRecvWRQ(TftpServerState):
                     os.mkdir(current, 0o700)
 
     def handle(self, pkt, raddress, rport):
-        "Handle an initial WRQ packet as a server."
         log.debug("In TftpStateServerRecvWRQ.handle")
+        self.context.context = 'WRQ'
+        self.context.filename = pkt.filename
+        self.context.file_bytes = b""  # reset buffer for new upload
+
         sendoack = self.serverInitial(pkt, raddress, rport)
         path = self.full_path
-        if self.context.upload_open:
-            f = self.context.upload_open(path, self.context)
-            if f is None:
-                self.sendError(TftpErrors.AccessViolation)
-                raise TftpException("Dynamic path %s not permitted" % path)
-            else:
-                self.context.fileobj = f
-        else:
-            log.debug("Opening file %s for writing" % path)
-            if os.path.exists(path):
-                # FIXME: correct behavior?
-                log.debug("File %s exists already, overwriting..." % (
-                    self.context.file_to_transfer))
-            # FIXME: I think we should upload to a temp file and not overwrite
-            # the existing file until the file is successfully uploaded.
-            self.make_subdirs()
-            self.context.fileobj = open(path, "wb")
 
-        # Options negotiation.
+        # We no longer write to disk. We only prepare the session.
         if sendoack:
             log.debug("Sending OACK to client")
             self.sendOACK()
         else:
-            log.debug("No requested options, expecting transfer to begin...")
+            log.debug("No requested options, sending ACK(0) to start")
             self.sendACK()
-        # Whether we're sending an oack or not, we're expecting a DAT for
-        # block 1
+
         self.context.next_block = 1
-        # We may have sent an OACK, but we're expecting a DAT as the response
-        # to either the OACK or an ACK, so lets unconditionally use the
-        # TftpStateExpectDAT state.
         return TftpStateExpectDAT(self.context)
+
 
         # Note, we don't have to check any other states in this method, that's
         # up to the caller.
@@ -492,6 +458,29 @@ class TftpStateExpectDAT(TftpState):
         else:
             self.sendError(TftpErrors.IllegalTftpOp)
             raise TftpException("Received unknown packet type from peer: " + str(pkt))
+
+    def handleDat(self, pkt):
+        log.info("Handling incoming DATA block %d" % pkt.blocknumber)
+        
+        if hasattr(self.context, 'file_bytes'):
+            # Server upload path: keep bytes in memory for DB persistence
+            self.context.file_bytes += pkt.data
+        else:
+            # Client download path: write directly to its output file
+            self.context.fileobj.write(pkt.data)
+
+        self.context.metrics.bytes += len(pkt.data)
+
+        self.sendACK(pkt.blocknumber)
+        self.context.next_block += 1
+
+        if len(pkt.data) < self.context.getBlocksize():
+            log.info("Upload complete detected.")
+            # ✅ File received completely → return None to end session
+            return None
+
+        return self
+
 
 class TftpStateSentWRQ(TftpState):
     """Just sent an WRQ packet for an upload."""
