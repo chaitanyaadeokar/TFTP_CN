@@ -464,6 +464,24 @@ def get_submissions(assignment_id):
         logger.exception('get_submissions')
         return jsonify({'ok': False, 'error': str(e)}), 500
 
+@app.route('/api/assignments/<int:assignment_id>/students', methods=['GET'])
+def get_students_for_assignment(assignment_id):
+    """Get all students with submission status for an assignment (teacher only)."""
+    try:
+        username = request.headers.get('Authorization', '').replace('Bearer token-', '').replace('Bearer ', '')
+        if not username:
+            return jsonify({'ok': False, 'error': 'authentication required'}), 401
+        
+        user_info = db.get_user_by_username(username)
+        if not user_info or user_info['role'] != 'teacher':
+            return jsonify({'ok': False, 'error': 'teacher access required'}), 403
+        
+        students = db.get_all_students_for_assignment(assignment_id)
+        return jsonify({'ok': True, 'students': students})
+    except Exception as e:
+        logger.exception('get_students_for_assignment')
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 @app.route('/api/submissions', methods=['POST'])
 def create_submission():
     """Submit a file for an assignment (student only, before deadline)."""

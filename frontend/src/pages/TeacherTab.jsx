@@ -22,6 +22,7 @@ export default function TeacherTab(){
   const [previewFile, setPreviewFile] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [docxHtml, setDocxHtml] = useState('')
+  const [textContent, setTextContent] = useState('')
 
   useEffect(() => {
     fetchAssignments()
@@ -39,16 +40,22 @@ export default function TeacherTab(){
     }
   }, [selectedAssignment, viewMode])
 
-  useEffect(() => {
-    if(selectedAssignment) {
-      fetchSubmissions(selectedAssignment.id)
-    }
-  }, [selectedAssignment])
-
   async function fetchAssignments(){
     try{
       const res = await api.get('/assignments')
-      if(res.data.ok) setAssignments(res.data.assignments)
+      if(res.data.ok) {
+        setAssignments(res.data.assignments)
+        // Always extract unique subjects from assignments
+        const uniqueSubjects = [...new Set(res.data.assignments
+          .filter(a => a.subject && a.subject.trim())
+          .map(a => a.subject.trim()))]
+        if(uniqueSubjects.length > 0) {
+          setSubjects(prev => {
+            const combined = [...new Set([...prev, ...uniqueSubjects])]
+            return combined.sort()
+          })
+        }
+      }
     }catch(err){
       console.error('Failed to fetch assignments:', err)
       alert('Failed to load assignments')
@@ -68,18 +75,66 @@ export default function TeacherTab(){
   async function fetchSubjects(){
     try{
       const res = await api.get('/subjects')
-      if(res.data.ok) setSubjects(res.data.subjects)
+      if(res.data.ok && res.data.subjects && res.data.subjects.length > 0) {
+        setSubjects(res.data.subjects)
+      }
+      // Always also extract from assignments as fallback/update
+      if(assignments.length > 0) {
+        const uniqueSubjects = [...new Set(assignments
+          .filter(a => a.subject && a.subject.trim())
+          .map(a => a.subject.trim()))]
+        if(uniqueSubjects.length > 0) {
+          setSubjects(prev => {
+            const combined = [...new Set([...prev, ...uniqueSubjects])]
+            return combined.sort()
+          })
+        }
+      }
     }catch(err){
       console.error('Failed to fetch subjects:', err)
+      // Fallback: extract unique subjects from assignments
+      if(assignments.length > 0) {
+        const uniqueSubjects = [...new Set(assignments
+          .filter(a => a.subject && a.subject.trim())
+          .map(a => a.subject.trim()))]
+        setSubjects(uniqueSubjects.sort())
+      }
     }
   }
 
   async function fetchAllStudents(assignmentId){
     try{
       const res = await api.get(`/assignments/${assignmentId}/students`)
-      if(res.data.ok) setAllStudents(res.data.students)
+      if(res.data.ok && res.data.students) {
+        // Sort students by student_id (roll number) - handle null/empty values
+        const sortedStudents = res.data.students.sort((a, b) => {
+          const idA = a.student_id || ''
+          const idB = b.student_id || ''
+          // If both have IDs, compare them (handle numeric and string IDs)
+          if(idA && idB) {
+            // Try numeric comparison first
+            const numA = parseInt(idA)
+            const numB = parseInt(idB)
+            if(!isNaN(numA) && !isNaN(numB)) {
+              return numA - numB
+            }
+            // Otherwise string comparison
+            return idA.localeCompare(idB)
+          }
+          // If one has ID and other doesn't, prioritize the one with ID
+          if(idA && !idB) return -1
+          if(!idA && idB) return 1
+          // If neither has ID, sort by user ID
+          return a.id - b.id
+        })
+        setAllStudents(sortedStudents)
+      } else {
+        console.error('No students returned or invalid response:', res.data)
+        setAllStudents([])
+      }
     }catch(err){
       console.error('Failed to fetch students:', err)
+      console.error('Error details:', err.response?.data)
       setAllStudents([])
     }
   }
@@ -219,7 +274,13 @@ export default function TeacherTab(){
             ) : fileType === 'image' ? (
               <img src={previewFile.url} alt={previewFile.filename} className="file-preview" />
             ) : fileType === 'pdf' ? (
-              <iframe src={previewFile.url} className="file-preview" title={previewFile.filename} />
+              <iframe 
+                src={previewFile.url + '#toolbar=1'} 
+                className="file-preview" 
+                title={previewFile.filename}
+                style={{width: '100%', minHeight: '600px', border: 'none', borderRadius: '8px'}}
+                type="application/pdf"
+              />
             ) : fileType === 'docx' ? (
               <div 
                 className="file-preview" 
@@ -244,8 +305,6 @@ export default function TeacherTab(){
       </div>
     )
   }
-
-  const [textContent, setTextContent] = useState('')
 
   // Load text file content for preview
   React.useEffect(() => {
@@ -487,7 +546,12 @@ export default function TeacherTab(){
                     📥 Submissions
                   </button>
                   <button 
-                    onClick={() => setViewMode('students')} 
+                    onClick={() => {
+                      setViewMode('students')
+                      if(selectedAssignment) {
+                        fetchAllStudents(selectedAssignment.id)
+                      }
+                    }} 
                     className={viewMode === 'students' ? 'btn btn-primary' : 'btn btn-secondary'}
                     style={{fontSize: '14px'}}
                   >
@@ -550,7 +614,7 @@ export default function TeacherTab(){
                       <table style={{width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)'}}>
                         <thead>
                           <tr style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white'}}>
-                            <th style={{padding: '12px', textAlign: 'left', fontWeight: '600'}}>Student ID</th>
+                            <th style={{padding: '12px', textAlign: 'left', fontWeight: '600'}}>Roll No. / ID</th>
                             <th style={{padding: '12px', textAlign: 'left', fontWeight: '600'}}>Name</th>
                             <th style={{padding: '12px', textAlign: 'left', fontWeight: '600'}}>Username</th>
                             <th style={{padding: '12px', textAlign: 'left', fontWeight: '600'}}>Status</th>
@@ -561,7 +625,7 @@ export default function TeacherTab(){
                         <tbody>
                           {allStudents.map(s => (
                             <tr key={s.id} style={{borderBottom: '1px solid #e3e6ee', transition: 'background 0.2s'}} onMouseEnter={(e) => e.currentTarget.style.background = '#f6f7fb'} onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
-                              <td style={{padding: '12px', fontWeight: '500'}}>{s.student_id || s.id}</td>
+                              <td style={{padding: '12px', fontWeight: '600', color: '#667eea'}}>{s.student_id || s.id}</td>
                               <td style={{padding: '12px'}}>{s.full_name || '-'}</td>
                               <td style={{padding: '12px', color: '#666'}}>{s.username}</td>
                               <td style={{padding: '12px'}}>

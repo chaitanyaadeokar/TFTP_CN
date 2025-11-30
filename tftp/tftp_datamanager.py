@@ -300,5 +300,26 @@ class DBManager:
         """, (user_id,))
         return [dict(r) for r in self.cursor.fetchall()]
 
+    def get_all_students_for_assignment(self, assignment_id):
+        """Get all students (with or without submissions) for an assignment, ordered by student_id"""
+        self.cursor.execute("""
+            SELECT DISTINCT u.id, u.username, u.student_id, u.full_name,
+                   s.id as submission_id, s.submitted_at,
+                   f.filename as submission_filename
+            FROM users u
+            LEFT JOIN assignment_submissions s ON u.id = s.user_id AND s.assignment_id = ?
+            LEFT JOIN uploaded_files f ON s.file_id = f.id
+            WHERE u.role = 'student'
+            ORDER BY 
+                CASE 
+                    WHEN u.student_id IS NULL OR u.student_id = '' THEN 1
+                    ELSE 0
+                END,
+                CAST(u.student_id AS INTEGER),
+                u.student_id,
+                u.id
+        """, (assignment_id,))
+        return [dict(r) for r in self.cursor.fetchall()]
+
     def close(self):
         self.conn.close()
