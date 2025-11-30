@@ -184,6 +184,11 @@ class TftpState(object):
             log.debug("Writing %d bytes to output file", len(pkt.data))
             self.context.fileobj.write(pkt.data)
             self.context.metrics.bytes += len(pkt.data)
+            # Emit cumulative client download progress
+            try:
+                log.info("Downloaded: %d bytes" % (self.context.metrics.bytes))
+            except Exception:
+                pass
             # Check for end-of-file, any less than full data packet.
             if len(pkt.data) < self.context.getBlocksize():
                 log.info("End of file detected")
@@ -470,6 +475,14 @@ class TftpStateExpectDAT(TftpState):
             self.context.fileobj.write(pkt.data)
 
         self.context.metrics.bytes += len(pkt.data)
+        # Emit cumulative progress for both server (upload) and client (download)
+        try:
+            if hasattr(self.context, 'file_bytes'):
+                log.info("Received: %d bytes so far" % (len(self.context.file_bytes)))
+            else:
+                log.info("Downloaded: %d bytes" % (self.context.metrics.bytes))
+        except Exception:
+            pass
 
         self.sendACK(pkt.blocknumber)
         self.context.next_block += 1

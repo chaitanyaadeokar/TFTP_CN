@@ -5,19 +5,18 @@ import Register from './pages/Register'
 import StudentDashboard from './pages/StudentDashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
 import AssignmentView from './pages/AssignmentView'
+import TFTPMain from './pages/TFTPMain'
 
 export default function App(){
   return (
     <div className="app">
       <header>
-        <h1>TFTP Assignment Platform</h1>
-        <nav>
-          <Link to="/login">Login</Link> | <Link to="/register">Register</Link>
-        </nav>
+        <h1>TFTP Client Server</h1>
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Login/>} />
+          <Route path="/" element={<TFTPMain/>} />
+          <Route path="/tftp" element={<TFTPMain/>} />
           <Route path="/login" element={<Login/>} />
           <Route path="/register" element={<Register/>} />
           <Route path="/student" element={<StudentDashboard/>} />
@@ -28,3 +27,4 @@ export default function App(){
     </div>
   )
 }
+            <Route path="/tftp" element={<TFTPMain/>} />

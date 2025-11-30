@@ -11,13 +11,17 @@ export default function Login(){
     e.preventDefault()
     try{
       const res = await api.post('/auth/login', {email, password})
-      // store token and redirect based on role
-      localStorage.setItem('token', res.data.token)
-      const role = res.data.role || 'student'
-      if(role === 'teacher') navigate('/teacher')
-      else navigate('/student')
+      if(res.data.ok){
+        // store token and redirect to main page
+        localStorage.setItem('token', res.data.token)
+        navigate('/tftp')
+      } else {
+        alert('Login failed: '+(res.data.error || 'Unknown error'))
+      }
     }catch(err){
-      alert('Login failed')
+      const errorMsg = err.response?.data?.error || err.message || 'Connection failed'
+      alert('Login failed: ' + errorMsg)
+      console.error('Login error:', err)
     }
   }
 

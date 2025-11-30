@@ -8,3 +8,7 @@
 containers/*/.venv
 .env
 *.log
+*.db
+node_modules/
+build/
+dist/
